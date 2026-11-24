@@ -1,0 +1,29 @@
+# Build output
+/bin/
+/hello-go
+*.exe
+*.test
+*.out
+
+# templ generated code (recreate with `make generate`)
+*_templ.go
+*_templ.txt
+
+# Go workspace / coverage
+go.work
+go.work.sum
+coverage.*
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json

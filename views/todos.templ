@@ -1,0 +1,101 @@
+package views
+
+import (
+	"fmt"
+	"hello-go/model"
+)
+
+// Page is the full document. HTMX loads the list on first render via the
+// server-rendered Section, then swaps it on every interaction.
+templ Page(v model.View) {
+	@Layout("Todos") {
+		@AddForm(v.Filter)
+		@Section(v)
+	}
+}
+
+// AddForm uses Alpine for a live character counter and to disable submit
+// when empty; HTMX posts it and swaps the section.
+templ AddForm(filter string) {
+	<form
+		class="add"
+		x-data="{ title: '', max: 80 }"
+		hx-post={ "/todos?filter=" + filter }
+		hx-target="#todo-section"
+		hx-swap="outerHTML"
+		@htmx:after-request="if ($event.detail.successful) title = ''"
+	>
+		<input name="title" x-model="title" :maxlength="max" placeholder="What needs doing?" autocomplete="off" autofocus/>
+		<span class="count" x-text="title.length + '/' + max"></span>
+		<button type="submit" :disabled="!title.trim()">Add</button>
+	</form>
+}
+
+// Section is the swappable fragment: list + footer.
+templ Section(v model.View) {
+	<section id="todo-section">
+		if len(v.Todos) == 0 {
+			<p class="empty">Nothing here. 🎉</p>
+		} else {
+			<ul>
+				for _, t := range v.Todos {
+					@Item(t, v.Filter)
+				}
+			</ul>
+		}
+		<footer class="foot">
+			<span>{ fmt.Sprint(v.Remaining) } left</span>
+			<nav>
+				for _, f := range []string{"all", "active", "done"} {
+					<a
+						href={ templ.SafeURL("/?filter=" + f) }
+						hx-get={ "/todos?filter=" + f }
+						hx-target="#todo-section"
+						hx-swap="outerHTML"
+						hx-push-url={ "/?filter=" + f }
+						class={ templ.KV("active", f == v.Filter) }
+					>{ f }</a>
+				}
+			</nav>
+			<button
+				class="ghost"
+				hx-delete={ "/todos?filter=" + v.Filter }
+				hx-target="#todo-section"
+				hx-swap="outerHTML"
+				hx-confirm="Clear all completed todos?"
+			>Clear done</button>
+		</footer>
+	</section>
+}
+
+// Item uses Alpine for the inline-edit toggle; HTMX persists changes.
+templ Item(t model.Todo, filter string) {
+	<li x-data="{ editing: false }" class={ templ.KV("done", t.Done) }>
+		<input
+			type="checkbox"
+			checked?={ t.Done }
+			hx-post={ fmt.Sprintf("/todos/%d/toggle?filter=%s", t.ID, filter) }
+			hx-target="#todo-section"
+			hx-swap="outerHTML"
+		/>
+		<span class="title" x-show="!editing" @dblclick="editing = true; $nextTick(() => $refs.edit.focus())">{ t.Title }</span>
+		<form
+			x-show="editing"
+			x-cloak
+			class="edit"
+			hx-put={ fmt.Sprintf("/todos/%d?filter=%s", t.ID, filter) }
+			hx-target="#todo-section"
+			hx-swap="outerHTML"
+			@keydown.escape="editing = false"
+		>
+			<input name="title" x-ref="edit" value={ t.Title } maxlength="80" @blur="editing = false"/>
+		</form>
+		<button
+			class="ghost danger"
+			title="Delete"
+			hx-delete={ fmt.Sprintf("/todos/%d?filter=%s", t.ID, filter) }
+			hx-target="#todo-section"
+			hx-swap="outerHTML"
+		>✕</button>
+	</li>
+}
