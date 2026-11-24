@@ -12,8 +12,12 @@ type Store struct {
 	todos  []Todo
 }
 
+// NewEmptyStore returns a store with no todos.
+func NewEmptyStore() *Store { return &Store{nextID: 1} }
+
+// NewStore returns a store seeded with a few example todos.
 func NewStore() *Store {
-	s := &Store{nextID: 1}
+	s := NewEmptyStore()
 	s.Add("Read the Templ docs")
 	s.Add("Wire up HTMX")
 	s.Add("Sprinkle in some Alpine.js")

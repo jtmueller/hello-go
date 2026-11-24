@@ -18,6 +18,17 @@ type app struct{ store *model.Store }
 func main() {
 	a := &app{store: model.NewStore()}
 
+	mux := a.routes()
+
+	addr := ":8080"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
+	log.Printf("listening on http://localhost%s", addr)
+	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+func (a *app) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 	mux.HandleFunc("GET /{$}", a.page)
@@ -27,13 +38,7 @@ func main() {
 	mux.HandleFunc("POST /todos/{id}/toggle", a.toggle)
 	mux.HandleFunc("PUT /todos/{id}", a.rename)
 	mux.HandleFunc("DELETE /todos/{id}", a.remove)
-
-	addr := ":8080"
-	if p := os.Getenv("PORT"); p != "" {
-		addr = ":" + p
-	}
-	log.Printf("listening on http://localhost%s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	return mux
 }
 
 func filterOf(r *http.Request) string {

@@ -21,6 +21,8 @@ brew install tailwindcss
 make run    # generate templates, build CSS, start on :8080 (override with PORT)
 make dev    # live reload: open http://localhost:8080 (proxy to the app on :8081)
 make build  # produces bin/hello-go
+make test   # generate templates, then go test -race ./...
+make vendor # re-download htmx/Alpine at the versions pinned in the Makefile
 ```
 
 Generated files (`views/*_templ.go`, `static/app.css`) are git-ignored; the
@@ -31,14 +33,17 @@ until you run `make generate css`.
 
 ```
 main.go            routes + HTTP handlers
+main_test.go       handler tests via httptest (no network)
 model/
   store.go         in-memory, mutex-guarded todo store
   view.go          Todo and View types passed to templates
+  store_test.go    store unit tests (incl. concurrency)
 views/
   layout.templ     HTML shell, loads HTMX/Alpine, dark-mode toggle
   todos.templ      Page, AddForm, Section, Item components
 assets/input.css   Tailwind entry point (source)
 static/app.css     Tailwind output (generated, git-ignored)
+static/vendor/     vendored htmx and Alpine.js (committed)
 ```
 
 ## Architecture
@@ -90,6 +95,11 @@ and views don't need to change.
 writes `static/app.css`, served from `/static/`. Dark mode is class-based
 (`dark:` variants, toggled on `<html>` by Alpine); an `htmx-request` variant
 is defined for in-flight styling.
+
+**Vendored scripts.** HTMX and Alpine are served from `static/vendor/`, so the
+app works offline and has no runtime CDN dependency. To update, change
+`HTMX_VERSION` / `ALPINE_VERSION` at the top of the `Makefile` (or run
+`make vendor HTMX_VERSION=x.y.z`), then commit the new files.
 
 **Dev loop.** `make dev` runs Tailwind in watch mode alongside
 `templ generate --watch`, which regenerates code, restarts the server, and
