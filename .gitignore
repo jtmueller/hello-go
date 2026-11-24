@@ -27,3 +27,6 @@ coverage.*
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Tailwind generated CSS (recreate with `make css`)
+/static/app.css

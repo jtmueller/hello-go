@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+/* Class-based dark mode, toggled by Alpine on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Style elements while an HTMX request is in flight. */
+@custom-variant htmx-request (&.htmx-request);
+
+/* Hide Alpine-controlled elements until Alpine initialises. */
+@layer base {
+  [x-cloak] {
+    display: none !important;
+  }
+}

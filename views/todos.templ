@@ -5,8 +5,7 @@ import (
 	"hello-go/model"
 )
 
-// Page is the full document. HTMX loads the list on first render via the
-// server-rendered Section, then swaps it on every interaction.
+// Page is the full document. HTMX swaps the Section on every interaction.
 templ Page(v model.View) {
 	@Layout("Todos") {
 		@AddForm(v.Filter)
@@ -18,24 +17,36 @@ templ Page(v model.View) {
 // when empty; HTMX posts it and swaps the section.
 templ AddForm(filter string) {
 	<form
-		class="add"
+		class="mb-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900"
 		x-data="{ title: '', max: 80 }"
 		hx-post={ "/todos?filter=" + filter }
 		hx-target="#todo-section"
 		hx-swap="outerHTML"
 		@htmx:after-request="if ($event.detail.successful) title = ''"
 	>
-		<input name="title" x-model="title" :maxlength="max" placeholder="What needs doing?" autocomplete="off" autofocus/>
-		<span class="count" x-text="title.length + '/' + max"></span>
-		<button type="submit" :disabled="!title.trim()">Add</button>
+		<input
+			name="title"
+			x-model="title"
+			:maxlength="max"
+			placeholder="What needs doing?"
+			autocomplete="off"
+			autofocus
+			class="flex-1 bg-transparent p-1.5 outline-none placeholder:text-slate-400"
+		/>
+		<span class="text-xs text-slate-400" x-text="title.length + '/' + max"></span>
+		<button
+			type="submit"
+			:disabled="!title.trim()"
+			class="cursor-pointer rounded-lg bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-indigo-500 dark:hover:bg-indigo-400"
+		>Add</button>
 	</form>
 }
 
 // Section is the swappable fragment: list + footer.
 templ Section(v model.View) {
-	<section id="todo-section">
+	<section id="todo-section" class="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
 		if len(v.Todos) == 0 {
-			<p class="empty">Nothing here. 🎉</p>
+			<p class="p-6 text-center text-slate-400">Nothing here. 🎉</p>
 		} else {
 			<ul>
 				for _, t := range v.Todos {
@@ -43,9 +54,9 @@ templ Section(v model.View) {
 				}
 			</ul>
 		}
-		<footer class="foot">
+		<footer class="flex items-center justify-between px-3 py-2.5 text-sm text-slate-500 dark:text-slate-400">
 			<span>{ fmt.Sprint(v.Remaining) } left</span>
-			<nav>
+			<nav class="flex gap-2">
 				for _, f := range []string{"all", "active", "done"} {
 					<a
 						href={ templ.SafeURL("/?filter=" + f) }
@@ -53,12 +64,15 @@ templ Section(v model.View) {
 						hx-target="#todo-section"
 						hx-swap="outerHTML"
 						hx-push-url={ "/?filter=" + f }
-						class={ templ.KV("active", f == v.Filter) }
+						class={
+							"rounded-md px-2 py-0.5 hover:text-slate-900 dark:hover:text-slate-100",
+							templ.KV("text-indigo-600 outline outline-indigo-600 dark:text-indigo-400 dark:outline-indigo-400", f == v.Filter),
+						}
 					>{ f }</a>
 				}
 			</nav>
 			<button
-				class="ghost"
+				class="cursor-pointer rounded-lg px-2 py-1 hover:text-slate-900 dark:hover:text-slate-100"
 				hx-delete={ "/todos?filter=" + v.Filter }
 				hx-target="#todo-section"
 				hx-swap="outerHTML"
@@ -70,29 +84,41 @@ templ Section(v model.View) {
 
 // Item uses Alpine for the inline-edit toggle; HTMX persists changes.
 templ Item(t model.Todo, filter string) {
-	<li x-data="{ editing: false }" class={ templ.KV("done", t.Done) }>
+	<li x-data="{ editing: false }" class="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
 		<input
 			type="checkbox"
 			checked?={ t.Done }
+			class="size-4 cursor-pointer accent-indigo-600"
 			hx-post={ fmt.Sprintf("/todos/%d/toggle?filter=%s", t.ID, filter) }
 			hx-target="#todo-section"
 			hx-swap="outerHTML"
 		/>
-		<span class="title" x-show="!editing" @dblclick="editing = true; $nextTick(() => $refs.edit.focus())">{ t.Title }</span>
+		<span
+			class={ "flex-1", templ.KV("text-slate-400 line-through", t.Done) }
+			x-show="!editing"
+			@dblclick="editing = true; $nextTick(() => $refs.edit.focus())"
+		>{ t.Title }</span>
 		<form
 			x-show="editing"
 			x-cloak
-			class="edit"
+			class="flex-1"
 			hx-put={ fmt.Sprintf("/todos/%d?filter=%s", t.ID, filter) }
 			hx-target="#todo-section"
 			hx-swap="outerHTML"
 			@keydown.escape="editing = false"
 		>
-			<input name="title" x-ref="edit" value={ t.Title } maxlength="80" @blur="editing = false"/>
+			<input
+				name="title"
+				x-ref="edit"
+				value={ t.Title }
+				maxlength="80"
+				@blur="editing = false"
+				class="w-full rounded-md border border-indigo-500 bg-transparent px-1.5 py-0.5 outline-none"
+			/>
 		</form>
 		<button
-			class="ghost danger"
 			title="Delete"
+			class="cursor-pointer rounded-lg px-2 py-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400"
 			hx-delete={ fmt.Sprintf("/todos/%d?filter=%s", t.ID, filter) }
 			hx-target="#todo-section"
 			hx-swap="outerHTML"
