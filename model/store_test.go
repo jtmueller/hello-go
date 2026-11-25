@@ -1,6 +1,7 @@
 package model
 
 import (
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -83,6 +84,21 @@ func TestPersistsAcrossReopen(t *testing.T) {
 	got := titles(list(t, s, "all"))
 	if len(got) != 4 || got[3] != "a" {
 		t.Fatalf("titles after reopen = %v", got)
+	}
+}
+
+func TestPathWithURISpecialChars(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a?b#c%20d.db")
+	s, err := Open(path)
+	ok(t, err)
+	defer s.Close()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("database not created at the literal path: %v", err)
+	}
+	var mode string
+	ok(t, s.db.QueryRow("PRAGMA journal_mode").Scan(&mode))
+	if mode != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", mode)
 	}
 }
 

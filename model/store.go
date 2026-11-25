@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
@@ -42,7 +43,9 @@ func NewEmptyStore() *Store {
 }
 
 func open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	// Escape characters that the URI parsers would treat as syntax.
+	esc := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(path)
+	db, err := sql.Open("sqlite", "file:"+esc+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
