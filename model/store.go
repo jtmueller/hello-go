@@ -67,22 +67,26 @@ func open(path string) (*Store, error) {
 	return &Store{q: db, db: db}, nil
 }
 
-// seedIfNew inserts example todos once, tracked by PRAGMA user_version so
-// that emptying the list later does not bring them back.
-func (s *Store) seedIfNew() error {
+// seedIfNew seeds a brand-new database in a single transaction, so a crash
+// midway cannot leave a partial seed that the next Open would repeat.
+func (s *Store) seedIfNew() error { return s.InTx(seed) }
+
+// seed inserts the example todos once, tracked by PRAGMA user_version so that
+// emptying the list later does not bring them back.
+func seed(tx *Store) error {
 	var v int
-	if err := s.q.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
+	if err := tx.q.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
 		return err
 	}
 	if v != 0 {
 		return nil
 	}
 	for _, title := range []string{"Read the Templ docs", "Wire up HTMX", "Sprinkle in some Alpine.js"} {
-		if _, err := s.Add(title); err != nil {
+		if _, err := tx.Add(title); err != nil {
 			return err
 		}
 	}
-	_, err := s.q.Exec("PRAGMA user_version = 1")
+	_, err := tx.q.Exec("PRAGMA user_version = 1")
 	return err
 }
 

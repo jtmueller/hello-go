@@ -103,6 +103,30 @@ func TestPathWithURISpecialChars(t *testing.T) {
 	}
 }
 
+// A seeding that fails midway must leave neither todos nor the marker behind,
+// otherwise the next Open would seed again and create duplicates.
+func TestSeedIsAtomic(t *testing.T) {
+	s := empty()
+	boom := errors.New("boom")
+	err := s.InTx(func(tx *Store) error {
+		if err := seed(tx); err != nil {
+			return err
+		}
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v", err)
+	}
+	if n := len(list(t, s, "all")); n != 0 {
+		t.Fatalf("%d todos left after rolled-back seed, want 0", n)
+	}
+	var v int
+	ok(t, s.db.QueryRow("PRAGMA user_version").Scan(&v))
+	if v != 0 {
+		t.Fatalf("user_version = %d after rollback, want 0", v)
+	}
+}
+
 func TestSeedOnlyOnNewDB(t *testing.T) {
 	path := dbPath(t)
 	s, err := Open(path)
@@ -290,9 +314,7 @@ func TestConcurrentAddList(t *testing.T) {
 	s := empty()
 	var wg sync.WaitGroup
 	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := s.Add("x"); err != nil {
 				t.Error(err)
 			}
@@ -302,7 +324,7 @@ func TestConcurrentAddList(t *testing.T) {
 			if _, err := s.Remaining(); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if n := len(list(t, s, "all")); n != 20 {
