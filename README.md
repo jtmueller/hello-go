@@ -25,32 +25,33 @@ make test   # generate templates, then go test -race ./...
 make vendor # re-download htmx/Alpine at the versions pinned in the Makefile
 ```
 
+Generated files (`views/*_templ.go`, `static/app.css`) are git-ignored; the
+`make` targets recreate them. A bare `go build` on a fresh clone will fail
+until you run `make generate css`.
+
 ## Persistence
 
 Todos are stored in SQLite (pure-Go `modernc.org/sqlite`, no cgo). The file path
 comes from `DB_PATH` (default `todos.db` in the working directory); it is
 created on first run and seeded with a few example todos once. The store uses
-a single connection in WAL mode. Each request changes and re-reads state in one transaction, so a failure returns
-HTTP 500 with nothing saved (retrying is safe). SIGINT/SIGTERM drain requests
-and close the database cleanly.
+a single connection in WAL mode. Each request changes and re-reads state in one
+transaction, so a failure returns HTTP 500 with nothing saved (retrying is
+safe). SIGINT/SIGTERM drain requests and close the database cleanly.
 
 ```sh
 DB_PATH=/var/lib/hello-go/todos.db make run
 ```
-
-Generated files (`views/*_templ.go`, `static/app.css`) are git-ignored; the
-`make` targets recreate them. A bare `go build` on a fresh clone will fail
-until you run `make generate css`.
 
 ## Layout
 
 ```
 main.go            routes + HTTP handlers
 main_test.go       handler tests via httptest (no network)
+AGENTS.md          guidance for coding agents: commands, conventions, gotchas
 model/
   store.go         SQLite-backed todo store
   view.go          Todo and View types passed to templates
-  store_test.go    store unit tests (incl. concurrency)
+  store_test.go    store tests (persistence, transactions, concurrency)
 views/
   layout.templ     HTML shell, loads HTMX/Alpine, dark-mode toggle
   todos.templ      Page, AddForm, Section, Item components
@@ -100,9 +101,11 @@ links use `hx-push-url` so the URL stays shareable and reloads correctly.
 fragment and composes `Item`. Components take plain Go structs
 (`model.View`), and templ escapes all output by default.
 
-**Storage.** `model.Store` is in-memory and resets on restart. To persist,
-replace it with a database-backed type exposing the same methods; handlers
-and views don't need to change.
+**Storage.** `model.Store` wraps a SQLite database (single connection, WAL).
+Handlers change state through `app.mutate`, which runs the change and the
+re-read of the view inside one `Store.InTx` transaction; a store error is
+logged and returned as HTTP 500. The SQL is plain, so moving to another
+database means rewriting `model/store.go` only.
 
 **Styling.** Tailwind v4 scans the `.templ` files for utility classes and
 writes `static/app.css`, served from `/static/`. Dark mode is class-based
