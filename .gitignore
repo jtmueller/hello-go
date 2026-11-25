@@ -28,5 +28,10 @@ coverage.*
 # Claude Code local settings
 .claude/settings.local.json
 
+# SQLite database (default todos.db, see DB_PATH)
+*.db
+*.db-wal
+*.db-shm
+
 # Tailwind generated CSS (recreate with `make css`)
 /static/app.css

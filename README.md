@@ -25,6 +25,17 @@ make test   # generate templates, then go test -race ./...
 make vendor # re-download htmx/Alpine at the versions pinned in the Makefile
 ```
 
+## Persistence
+
+Todos are stored in SQLite (pure-Go `modernc.org/sqlite`, no cgo). The file path
+comes from `DB_PATH` (default `todos.db` in the working directory); it is
+created on first run and seeded with a few example todos once. The store uses
+a single connection in WAL mode. A store failure returns HTTP 500.
+
+```sh
+DB_PATH=/var/lib/hello-go/todos.db make run
+```
+
 Generated files (`views/*_templ.go`, `static/app.css`) are git-ignored; the
 `make` targets recreate them. A bare `go build` on a fresh clone will fail
 until you run `make generate css`.
@@ -35,7 +46,7 @@ until you run `make generate css`.
 main.go            routes + HTTP handlers
 main_test.go       handler tests via httptest (no network)
 model/
-  store.go         in-memory, mutex-guarded todo store
+  store.go         SQLite-backed todo store
   view.go          Todo and View types passed to templates
   store_test.go    store unit tests (incl. concurrency)
 views/
