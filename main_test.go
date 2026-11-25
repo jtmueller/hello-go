@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,24 +13,19 @@ import (
 
 // newServer returns a handler backed by an empty store seeded with the
 // given titles, plus the store for direct assertions.
-func newServer(titles ...string) (http.Handler, *model.Store) {
+func newServer(t *testing.T, titles ...string) (http.Handler, *model.Store) {
+	t.Helper()
 	store := model.NewEmptyStore()
 	for _, title := range titles {
 		if _, err := store.Add(title); err != nil {
-			panic(err)
+			t.Fatal(err)
 		}
 	}
 	return (&app{store: store}).routes(), store
 }
 
 func do(h http.Handler, method, target string, form url.Values) *httptest.ResponseRecorder {
-	var body *strings.Reader
-	if form != nil {
-		body = strings.NewReader(form.Encode())
-	} else {
-		body = strings.NewReader("")
-	}
-	req := httptest.NewRequest(method, target, body)
+	req := httptest.NewRequest(method, target, strings.NewReader(form.Encode()))
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
@@ -38,14 +34,15 @@ func do(h http.Handler, method, target string, form url.Values) *httptest.Respon
 	return rec
 }
 
-func titlesOf(s *model.Store) []string {
-	var out []string
+func titlesOf(t *testing.T, s *model.Store) []string {
+	t.Helper()
 	todos, err := s.List("all")
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	for _, t := range todos {
-		out = append(out, t.Title)
+	out := make([]string, len(todos))
+	for i, todo := range todos {
+		out[i] = todo.Title
 	}
 	return out
 }
@@ -74,7 +71,7 @@ func mustNotContain(t *testing.T, rec *httptest.ResponseRecorder, subs ...string
 }
 
 func TestPageRendersFullDocument(t *testing.T) {
-	h, _ := newServer("Buy milk")
+	h, _ := newServer(t, "Buy milk")
 	rec := do(h, "GET", "/", nil)
 	mustContain(t, rec, "<!doctype html>", `id="todo-section"`, "Buy milk", "1 left", "/static/app.css")
 }
@@ -82,7 +79,7 @@ func TestPageRendersFullDocument(t *testing.T) {
 // Clicking a todo's text toggles it (like the checkbox), but must not fire on
 // a double-click, which starts inline editing.
 func TestItemTextClickTogglesButNotOnDoubleClick(t *testing.T) {
-	h, _ := newServer("Buy milk")
+	h, _ := newServer(t, "Buy milk")
 	rec := do(h, "GET", "/", nil)
 	mustContain(t, rec,
 		`hx-trigger="change, toggle"`, // checkbox also listens for the programmatic toggle
@@ -93,7 +90,7 @@ func TestItemTextClickTogglesButNotOnDoubleClick(t *testing.T) {
 }
 
 func TestFavicon(t *testing.T) {
-	h, _ := newServer()
+	h, _ := newServer(t)
 	mustContain(t, do(h, "GET", "/", nil), `rel="icon"`, "/static/favicon.svg")
 	for _, path := range []string{"/static/favicon.svg", "/favicon.ico"} {
 		rec := do(h, "GET", path, nil)
@@ -110,102 +107,106 @@ func TestFavicon(t *testing.T) {
 }
 
 func TestPageUnknownPathIs404(t *testing.T) {
-	h, _ := newServer()
+	h, _ := newServer(t)
 	if rec := do(h, "GET", "/nope", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
 
 func TestSectionIsFragmentOnly(t *testing.T) {
-	h, _ := newServer("a")
+	h, _ := newServer(t, "a")
 	rec := do(h, "GET", "/todos", nil)
 	mustContain(t, rec, `id="todo-section"`)
 	mustNotContain(t, rec, "<html")
 }
 
 func TestEmptyState(t *testing.T) {
-	h, _ := newServer()
+	h, _ := newServer(t)
 	mustContain(t, do(h, "GET", "/todos", nil), "Nothing here", "0 left")
 }
 
 func TestAdd(t *testing.T) {
-	h, store := newServer()
+	h, store := newServer(t)
 	rec := do(h, "POST", "/todos", url.Values{"title": {"  Write tests  "}})
 	mustContain(t, rec, "Write tests")
-	if got := titlesOf(store); len(got) != 1 || got[0] != "Write tests" {
+	if got := titlesOf(t, store); !slices.Equal(got, []string{"Write tests"}) {
 		t.Fatalf("store = %v, want trimmed title", got)
 	}
 }
 
 func TestAddIgnoresBlankTitle(t *testing.T) {
-	h, store := newServer()
+	h, store := newServer(t)
 	rec := do(h, "POST", "/todos", url.Values{"title": {"   "}})
 	mustContain(t, rec, "Nothing here")
-	if len(titlesOf(store)) != 0 {
-		t.Fatal("blank title should not be added")
+	if got := titlesOf(t, store); len(got) != 0 {
+		t.Fatalf("blank title was added: %v", got)
 	}
 }
 
 func TestAddEscapesHTML(t *testing.T) {
-	h, _ := newServer()
+	h, _ := newServer(t)
 	rec := do(h, "POST", "/todos", url.Values{"title": {"<script>alert(1)</script>"}})
 	mustContain(t, rec, "&lt;script&gt;")
 	mustNotContain(t, rec, "<script>alert(1)")
 }
 
 func TestToggle(t *testing.T) {
-	h, store := newServer("a", "b")
+	h, store := newServer(t, "a", "b")
 	rec := do(h, "POST", "/todos/1/toggle", nil)
 	mustContain(t, rec, "1 left")
-	if todos, _ := store.List("all"); !todos[0].Done {
+	todos, err := store.List("all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !todos[0].Done {
 		t.Fatal("todo 1 should be done")
 	}
 }
 
 func TestToggleBadIDIsNoop(t *testing.T) {
-	h, _ := newServer("a")
+	h, _ := newServer(t, "a")
 	mustContain(t, do(h, "POST", "/todos/abc/toggle", nil), "1 left")
 }
 
 func TestRename(t *testing.T) {
-	h, store := newServer("old")
+	h, store := newServer(t, "old")
 	mustContain(t, do(h, "PUT", "/todos/1", url.Values{"title": {" new "}}), "new")
-	if got := titlesOf(store); got[0] != "new" {
+	if got := titlesOf(t, store); !slices.Equal(got, []string{"new"}) {
 		t.Fatalf("store = %v", got)
 	}
 }
 
 func TestRenameBlankKeepsOldTitle(t *testing.T) {
-	h, store := newServer("keep")
+	h, store := newServer(t, "keep")
 	mustContain(t, do(h, "PUT", "/todos/1", url.Values{"title": {""}}), "keep")
-	if got := titlesOf(store); got[0] != "keep" {
+	if got := titlesOf(t, store); !slices.Equal(got, []string{"keep"}) {
 		t.Fatalf("store = %v", got)
 	}
 }
 
 func TestDelete(t *testing.T) {
-	h, store := newServer("a", "b")
+	h, store := newServer(t, "a", "b")
 	rec := do(h, "DELETE", "/todos/1", nil)
 	mustContain(t, rec, "b")
 	mustNotContain(t, rec, ">a<")
-	if got := titlesOf(store); len(got) != 1 || got[0] != "b" {
+	if got := titlesOf(t, store); !slices.Equal(got, []string{"b"}) {
 		t.Fatalf("store = %v", got)
 	}
 }
 
 func TestClearDone(t *testing.T) {
-	h, store := newServer("a", "b")
+	h, store := newServer(t, "a", "b")
 	if err := store.Toggle(1); err != nil {
 		t.Fatal(err)
 	}
 	mustContain(t, do(h, "DELETE", "/todos", nil), "1 left")
-	if got := titlesOf(store); len(got) != 1 || got[0] != "b" {
+	if got := titlesOf(t, store); !slices.Equal(got, []string{"b"}) {
 		t.Fatalf("store = %v", got)
 	}
 }
 
 func TestFilterQuery(t *testing.T) {
-	h, store := newServer("open", "closed")
+	h, store := newServer(t, "open", "closed")
 	if err := store.Toggle(2); err != nil {
 		t.Fatal(err)
 	}
@@ -223,27 +224,27 @@ func TestFilterQuery(t *testing.T) {
 }
 
 func TestMutationsPreserveFilter(t *testing.T) {
-	h, _ := newServer("a")
+	h, _ := newServer(t, "a")
 	rec := do(h, "POST", "/todos/1/toggle?filter=active", nil)
 	// Rendered URLs must carry the current filter so the next action keeps it.
 	mustContain(t, rec, "filter=active")
 }
 
 func TestFilterIsNotInjectable(t *testing.T) {
-	h, _ := newServer("a")
+	h, _ := newServer(t, "a")
 	rec := do(h, "GET", `/todos?filter="><script>x</script>`, nil)
 	mustNotContain(t, rec, "<script>x")
 }
 
 func TestMethodNotAllowed(t *testing.T) {
-	h, _ := newServer()
+	h, _ := newServer(t)
 	if rec := do(h, "PATCH", "/todos", nil); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }
 
 func TestStoreFailureReturns500(t *testing.T) {
-	h, store := newServer("a")
+	h, store := newServer(t, "a")
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -259,10 +260,12 @@ func TestStoreFailureReturns500(t *testing.T) {
 		{"DELETE", "/todos/1", nil},
 		{"DELETE", "/todos", nil},
 	} {
-		rec := do(h, tc.method, tc.target, tc.form)
-		if rec.Code != http.StatusInternalServerError {
-			t.Errorf("%s %s = %d, want 500", tc.method, tc.target, rec.Code)
-		}
-		mustNotContain(t, rec, "todo-section")
+		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
+			rec := do(h, tc.method, tc.target, tc.form)
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d, want 500", rec.Code)
+			}
+			mustNotContain(t, rec, "todo-section")
+		})
 	}
 }
