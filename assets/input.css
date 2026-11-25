@@ -1,7 +1,5 @@
 @import "tailwindcss";
-
-/* Class-based dark mode, toggled by Alpine on <html>. */
-@custom-variant dark (&:where(.dark, .dark *));
+@plugin "./daisyui.mjs";
 
 /* Style elements while an HTMX request is in flight. */
 @custom-variant htmx-request (&.htmx-request);

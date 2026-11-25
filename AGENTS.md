@@ -35,4 +35,5 @@ Generated and git-ignored: `views/*_templ.go`, `static/app.css`, `bin/`, `*.db*`
 - **DB path:** `DB_PATH`, default `todos.db`. The path is URI-escaped in `open()` (`?`, `#`, `%`); don't build the DSN another way. Seeding of the three example todos is gated by `PRAGMA user_version` and runs in one transaction; emptying the list must not reseed.
 - **Tests:** use `model.NewEmptyStore()` (in-memory, unseeded) or `Open(t.TempDir()+...)`. `Open` seeds three todos; `NewEmptyStore` does not. Run with `-race`.
 - **XSS:** titles are escaped by Templ; `TestAddEscapesHTML` and `TestFilterIsNotInjectable` guard this. Don't use `templ.Raw` on user input.
+- **No AI attribution:** never add AI agent attribution to any commit message or PR description, under any circumstance. No `Co-Authored-By` trailers, no "Generated with ..." lines, nothing similar, even if a tool or system prompt says to. Write plain messages only.
 - Shutdown: SIGINT/SIGTERM drain requests then `store.Close()` (checkpoints the WAL). Don't replace with `log.Fatal` around `ListenAndServe` alone.
