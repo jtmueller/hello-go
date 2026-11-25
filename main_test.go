@@ -79,6 +79,19 @@ func TestPageRendersFullDocument(t *testing.T) {
 	mustContain(t, rec, "<!doctype html>", `id="todo-section"`, "Buy milk", "1 left", "/static/app.css")
 }
 
+// Clicking a todo's text toggles it (like the checkbox), but must not fire on
+// a double-click, which starts inline editing.
+func TestItemTextClickTogglesButNotOnDoubleClick(t *testing.T) {
+	h, _ := newServer("Buy milk")
+	rec := do(h, "GET", "/", nil)
+	mustContain(t, rec,
+		`hx-trigger="change, toggle"`, // checkbox also listens for the programmatic toggle
+		`x-ref="toggle"`,
+		"setTimeout",   // single click is deferred...
+		"clearTimeout", // ...and cancelled by a double-click
+	)
+}
+
 func TestPageUnknownPathIs404(t *testing.T) {
 	h, _ := newServer()
 	if rec := do(h, "GET", "/nope", nil); rec.Code != http.StatusNotFound {

@@ -83,20 +83,26 @@ templ Section(v model.View) {
 }
 
 // Item uses Alpine for the inline-edit toggle; HTMX persists changes.
+// Clicking the text toggles the todo via the checkbox's hx-post. The click is
+// deferred 250ms so a double-click (which fires two clicks first) can cancel it
+// and start editing instead of toggling.
 templ Item(t model.Todo, filter string) {
-	<li x-data="{ editing: false }" class="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
+	<li x-data="{ editing: false, timer: null }" class="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
 		<input
 			type="checkbox"
 			checked?={ t.Done }
+			x-ref="toggle"
 			class="size-4 cursor-pointer accent-indigo-600"
 			hx-post={ fmt.Sprintf("/todos/%d/toggle?filter=%s", t.ID, filter) }
+			hx-trigger="change, toggle"
 			hx-target="#todo-section"
 			hx-swap="outerHTML"
 		/>
 		<span
-			class={ "flex-1", templ.KV("text-slate-400 line-through", t.Done) }
+			class={ "flex-1 cursor-pointer", templ.KV("text-slate-400 line-through", t.Done) }
 			x-show="!editing"
-			@dblclick="editing = true; $nextTick(() => $refs.edit.focus())"
+			@click="timer = timer || setTimeout(() => { timer = null; htmx.trigger($refs.toggle, 'toggle') }, 250)"
+			@dblclick="clearTimeout(timer); timer = null; editing = true; $nextTick(() => $refs.edit.focus())"
 		>{ t.Title }</span>
 		<form
 			x-show="editing"
