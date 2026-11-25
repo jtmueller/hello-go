@@ -4,8 +4,8 @@
 
 # Vendored front-end scripts. Bump a version here, then run `make vendor`
 # and commit the updated files in static/vendor/.
-HTMX_VERSION   ?= 2.0.4
-ALPINE_VERSION ?= 3.14.8
+HTMX_VERSION   ?= 2.0.11
+ALPINE_VERSION ?= 3.17.5
 
 generate:
 	templ generate
