@@ -67,6 +67,7 @@ func main() {
 func (a *app) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.HandleFunc("GET /favicon.ico", favicon) // browsers ask for this by default
 	mux.HandleFunc("GET /{$}", a.page)
 	mux.HandleFunc("GET /todos", a.section)
 	mux.HandleFunc("POST /todos", a.add)
@@ -75,6 +76,12 @@ func (a *app) routes() *http.ServeMux {
 	mux.HandleFunc("PUT /todos/{id}", a.rename)
 	mux.HandleFunc("DELETE /todos/{id}", a.remove)
 	return mux
+}
+
+// favicon serves the SVG icon at the conventional /favicon.ico path.
+func favicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	http.ServeFile(w, r, "static/favicon.svg")
 }
 
 func filterOf(r *http.Request) string {

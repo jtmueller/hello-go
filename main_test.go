@@ -92,6 +92,23 @@ func TestItemTextClickTogglesButNotOnDoubleClick(t *testing.T) {
 	)
 }
 
+func TestFavicon(t *testing.T) {
+	h, _ := newServer()
+	mustContain(t, do(h, "GET", "/", nil), `rel="icon"`, "/static/favicon.svg")
+	for _, path := range []string{"/static/favicon.svg", "/favicon.ico"} {
+		rec := do(h, "GET", path, nil)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", path, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "image/svg+xml" {
+			t.Errorf("GET %s Content-Type = %q, want image/svg+xml", path, ct)
+		}
+		if !strings.Contains(rec.Body.String(), "<svg") {
+			t.Errorf("GET %s body is not an SVG", path)
+		}
+	}
+}
+
 func TestPageUnknownPathIs404(t *testing.T) {
 	h, _ := newServer()
 	if rec := do(h, "GET", "/nope", nil); rec.Code != http.StatusNotFound {
