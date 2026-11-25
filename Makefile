@@ -13,6 +13,8 @@ vendor:
 	mkdir -p static/vendor
 	curl -fsSL -o static/vendor/htmx.min.js https://unpkg.com/htmx.org@$(HTMX_VERSION)/dist/htmx.min.js
 	curl -fsSL -o static/vendor/alpine.min.js https://unpkg.com/alpinejs@$(ALPINE_VERSION)/dist/cdn.min.js
+	curl -fsSL -o assets/daisyui.mjs https://github.com/saadeghi/daisyui/releases/latest/download/daisyui.mjs
+	curl -fsSL -o assets/daisyui-theme.mjs https://github.com/saadeghi/daisyui/releases/latest/download/daisyui-theme.mjs
 	@echo "vendored htmx $(HTMX_VERSION), alpine $(ALPINE_VERSION)"
 css:
 	tailwindcss -i assets/input.css -o static/app.css --minify
