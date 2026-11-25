@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 
@@ -10,7 +11,16 @@ import (
 
 // Store is a todo store backed by SQLite. The pool is limited to one
 // connection, which serializes access and avoids "database is locked" errors.
-type Store struct{ db *sql.DB }
+type Store struct {
+	q  queryer // the *sql.DB, or the open transaction inside InTx
+	db *sql.DB // nil for a transaction-scoped Store
+}
+
+type queryer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
 
 const schema = `CREATE TABLE IF NOT EXISTS todos (
 	id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,14 +64,14 @@ func open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{q: db, db: db}, nil
 }
 
 // seedIfNew inserts example todos once, tracked by PRAGMA user_version so
 // that emptying the list later does not bring them back.
 func (s *Store) seedIfNew() error {
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
+	if err := s.q.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
 		return err
 	}
 	if v != 0 {
@@ -72,15 +82,38 @@ func (s *Store) seedIfNew() error {
 			return err
 		}
 	}
-	_, err := s.db.Exec("PRAGMA user_version = 1")
+	_, err := s.q.Exec("PRAGMA user_version = 1")
 	return err
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	if s.db == nil {
+		return errors.New("store: cannot close a transaction-scoped store")
+	}
+	return s.db.Close()
+}
+
+// InTx runs fn against a transaction-scoped Store. It commits if fn returns
+// nil and rolls back otherwise, so a request can change and re-read state
+// atomically. fn must use only the Store it is given; nesting is an error.
+func (s *Store) InTx(fn func(tx *Store) error) error {
+	if s.db == nil {
+		return errors.New("store: InTx cannot be nested")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := fn(&Store{q: tx}); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
 
 func (s *Store) Add(title string) (Todo, error) {
 	t := Todo{Title: title, Created: time.Now().UTC()}
-	res, err := s.db.Exec("INSERT INTO todos (title, done, created) VALUES (?, 0, ?)", title, t.Created)
+	res, err := s.q.Exec("INSERT INTO todos (title, done, created) VALUES (?, 0, ?)", title, t.Created)
 	if err != nil {
 		return Todo{}, err
 	}
@@ -101,7 +134,7 @@ func (s *Store) List(filter string) ([]Todo, error) {
 	case "done":
 		q += " WHERE done = 1"
 	}
-	rows, err := s.db.Query(q + " ORDER BY id")
+	rows, err := s.q.Query(q + " ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -119,26 +152,26 @@ func (s *Store) List(filter string) ([]Todo, error) {
 
 func (s *Store) Remaining() (int, error) {
 	var n int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM todos WHERE done = 0").Scan(&n)
+	err := s.q.QueryRow("SELECT COUNT(*) FROM todos WHERE done = 0").Scan(&n)
 	return n, err
 }
 
 func (s *Store) Toggle(id int) error {
-	_, err := s.db.Exec("UPDATE todos SET done = 1 - done WHERE id = ?", id)
+	_, err := s.q.Exec("UPDATE todos SET done = 1 - done WHERE id = ?", id)
 	return err
 }
 
 func (s *Store) Rename(id int, title string) error {
-	_, err := s.db.Exec("UPDATE todos SET title = ? WHERE id = ?", title, id)
+	_, err := s.q.Exec("UPDATE todos SET title = ? WHERE id = ?", title, id)
 	return err
 }
 
 func (s *Store) Delete(id int) error {
-	_, err := s.db.Exec("DELETE FROM todos WHERE id = ?", id)
+	_, err := s.q.Exec("DELETE FROM todos WHERE id = ?", id)
 	return err
 }
 
 func (s *Store) ClearDone() error {
-	_, err := s.db.Exec("DELETE FROM todos WHERE done = 1")
+	_, err := s.q.Exec("DELETE FROM todos WHERE done = 1")
 	return err
 }

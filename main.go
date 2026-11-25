@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/a-h/templ"
 
@@ -33,7 +37,31 @@ func main() {
 		addr = ":" + p
 	}
 	log.Printf("listening on http://localhost%s (db: %s)", addr, path)
-	log.Fatal(http.ListenAndServe(addr, mux))
+
+	// Serve until SIGINT/SIGTERM, then drain requests and close the store so
+	// SQLite checkpoints the WAL.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	srv := &http.Server{Addr: addr, Handler: mux}
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+
+	select {
+	case err := <-errc:
+		store.Close()
+		log.Fatal(err)
+	case <-ctx.Done():
+	}
+	stop()
+	log.Print("shutting down")
+	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutCtx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		log.Printf("close database: %v", err)
+	}
 }
 
 func (a *app) routes() *http.ServeMux {
@@ -57,13 +85,15 @@ func filterOf(r *http.Request) string {
 	return "all"
 }
 
-func (a *app) view(r *http.Request) (model.View, error) {
+func (a *app) view(r *http.Request) (model.View, error) { return viewOf(r, a.store) }
+
+func viewOf(r *http.Request, s *model.Store) (model.View, error) {
 	f := filterOf(r)
-	todos, err := a.store.List(f)
+	todos, err := s.List(f)
 	if err != nil {
 		return model.View{}, err
 	}
-	remaining, err := a.store.Remaining()
+	remaining, err := s.Remaining()
 	if err != nil {
 		return model.View{}, err
 	}
@@ -96,19 +126,30 @@ func (a *app) renderSection(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) section(w http.ResponseWriter, r *http.Request) { a.renderSection(w, r) }
 
-// mutate runs a store change and, if it succeeds, renders the section.
-func (a *app) mutate(w http.ResponseWriter, r *http.Request, change func() error) {
-	if err := change(); err != nil {
+// mutate applies a store change and re-reads the view in one transaction.
+// If either step fails nothing is saved, so the 500 is truthful and the
+// client can safely retry without creating duplicates.
+func (a *app) mutate(w http.ResponseWriter, r *http.Request, change func(s *model.Store) error) {
+	var v model.View
+	err := a.store.InTx(func(tx *model.Store) error {
+		if err := change(tx); err != nil {
+			return err
+		}
+		var err error
+		v, err = viewOf(r, tx)
+		return err
+	})
+	if err != nil {
 		fail(w, err)
 		return
 	}
-	a.renderSection(w, r)
+	templ.Handler(views.Section(v)).ServeHTTP(w, r)
 }
 
 func (a *app) add(w http.ResponseWriter, r *http.Request) {
-	a.mutate(w, r, func() error {
+	a.mutate(w, r, func(s *model.Store) error {
 		if title := strings.TrimSpace(r.FormValue("title")); title != "" {
-			_, err := a.store.Add(title)
+			_, err := s.Add(title)
 			return err
 		}
 		return nil
@@ -116,33 +157,33 @@ func (a *app) add(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) toggle(w http.ResponseWriter, r *http.Request) {
-	a.mutate(w, r, func() error {
+	a.mutate(w, r, func(s *model.Store) error {
 		if id, err := strconv.Atoi(r.PathValue("id")); err == nil {
-			return a.store.Toggle(id)
+			return s.Toggle(id)
 		}
 		return nil
 	})
 }
 
 func (a *app) rename(w http.ResponseWriter, r *http.Request) {
-	a.mutate(w, r, func() error {
+	a.mutate(w, r, func(s *model.Store) error {
 		id, err := strconv.Atoi(r.PathValue("id"))
 		if title := strings.TrimSpace(r.FormValue("title")); err == nil && title != "" {
-			return a.store.Rename(id, title)
+			return s.Rename(id, title)
 		}
 		return nil
 	})
 }
 
 func (a *app) remove(w http.ResponseWriter, r *http.Request) {
-	a.mutate(w, r, func() error {
+	a.mutate(w, r, func(s *model.Store) error {
 		if id, err := strconv.Atoi(r.PathValue("id")); err == nil {
-			return a.store.Delete(id)
+			return s.Delete(id)
 		}
 		return nil
 	})
 }
 
 func (a *app) clearDone(w http.ResponseWriter, r *http.Request) {
-	a.mutate(w, r, a.store.ClearDone)
+	a.mutate(w, r, (*model.Store).ClearDone)
 }

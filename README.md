@@ -30,7 +30,9 @@ make vendor # re-download htmx/Alpine at the versions pinned in the Makefile
 Todos are stored in SQLite (pure-Go `modernc.org/sqlite`, no cgo). The file path
 comes from `DB_PATH` (default `todos.db` in the working directory); it is
 created on first run and seeded with a few example todos once. The store uses
-a single connection in WAL mode. A store failure returns HTTP 500.
+a single connection in WAL mode. Each request changes and re-reads state in one transaction, so a failure returns
+HTTP 500 with nothing saved (retrying is safe). SIGINT/SIGTERM drain requests
+and close the database cleanly.
 
 ```sh
 DB_PATH=/var/lib/hello-go/todos.db make run

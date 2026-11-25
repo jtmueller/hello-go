@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -229,6 +230,47 @@ func TestClearDone(t *testing.T) {
 	ok(t, s.ClearDone())
 	if got := titles(list(t, s, "all")); !equal(got, []string{"b"}) {
 		t.Fatalf("titles = %v", got)
+	}
+}
+
+func TestInTxCommits(t *testing.T) {
+	s := empty()
+	err := s.InTx(func(tx *Store) error {
+		_, err := tx.Add("a")
+		return err
+	})
+	ok(t, err)
+	if got := titles(list(t, s, "all")); !equal(got, []string{"a"}) {
+		t.Fatalf("titles = %v", got)
+	}
+}
+
+func TestInTxRollsBackOnError(t *testing.T) {
+	s := empty()
+	add(t, s, "keep")
+	want := errors.New("boom")
+	err := s.InTx(func(tx *Store) error {
+		if _, err := tx.Add("lost"); err != nil {
+			return err
+		}
+		if err := tx.Delete(1); err != nil {
+			return err
+		}
+		return want
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v, want %v", err, want)
+	}
+	if got := titles(list(t, s, "all")); !equal(got, []string{"keep"}) {
+		t.Fatalf("titles after rollback = %v, want [keep]", got)
+	}
+}
+
+func TestInTxCannotNest(t *testing.T) {
+	s := empty()
+	err := s.InTx(func(tx *Store) error { return tx.InTx(func(*Store) error { return nil }) })
+	if err == nil {
+		t.Fatal("nested InTx should error, not deadlock")
 	}
 }
 
